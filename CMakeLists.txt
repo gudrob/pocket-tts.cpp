@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Build options
+option(BUILD_CLI "Build command-line tool" ON)
+option(BUILD_SHARED "Build shared library" ON)
+
 # Platform detection
 if(WIN32)
     set(PLATFORM_WINDOWS TRUE)
@@ -78,7 +82,6 @@ message(STATUS "SentencePiece library: ${SENTENCEPIECE_LIBRARIES}")
 
 # libsndfile and libsamplerate
 if(WIN32)
-    # Windows: Use vcpkg or manual paths
     find_path(SNDFILE_INCLUDE_DIRS NAMES sndfile.h)
     find_library(SNDFILE_LIBRARIES NAMES sndfile libsndfile-1)
     find_path(SAMPLERATE_INCLUDE_DIRS NAMES samplerate.h)
@@ -95,19 +98,15 @@ if(APPLE)
     find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
 endif()
 
-# Define source files
-set(SOURCES
+# Core library sources (shared between CLI and library)
+set(LIB_SOURCES
     src/audio_utils.cpp
     src/tokenizer.cpp
     src/pocket_tts.cpp
-    src/main.cpp
 )
 
-# Create executable
-add_executable(pocket_tts ${SOURCES})
-
-# Include directories
-target_include_directories(pocket_tts PRIVATE
+# Common include directories
+set(COMMON_INCLUDES
     ${CMAKE_SOURCE_DIR}/include
     ${ONNXRUNTIME_INCLUDE_DIRS}
     ${ONNXRUNTIME_INCLUDE_DIRS}/..
@@ -116,16 +115,8 @@ target_include_directories(pocket_tts PRIVATE
     ${SAMPLERATE_INCLUDE_DIRS}
 )
 
-# Link directories for pkg-config libraries
-if(NOT WIN32)
-    target_link_directories(pocket_tts PRIVATE
-        ${SNDFILE_LIBRARY_DIRS}
-        ${SAMPLERATE_LIBRARY_DIRS}
-    )
-endif()
-
-# Link libraries
-target_link_libraries(pocket_tts PRIVATE
+# Common link libraries
+set(COMMON_LIBS
     ${ONNXRUNTIME_LIBRARIES}
     ${SENTENCEPIECE_LIBRARIES}
     ${SNDFILE_LIBRARIES}
@@ -133,33 +124,113 @@ target_link_libraries(pocket_tts PRIVATE
 )
 
 if(APPLE)
-    target_link_libraries(pocket_tts PRIVATE 
-        ${COREML_FRAMEWORK} 
+    list(APPEND COMMON_LIBS
+        ${COREML_FRAMEWORK}
         ${FOUNDATION_FRAMEWORK}
         ${ACCELERATE_FRAMEWORK}
     )
 endif()
 
-# Compiler options
-if(MSVC)
-    target_compile_options(pocket_tts PRIVATE /W4 /O2)
-else()
-    target_compile_options(pocket_tts PRIVATE -Wall -Wextra -O2)
-endif()
-
-# Windows-specific settings
-if(WIN32)
-    # Copy DLLs on Windows
-    add_custom_command(TARGET pocket_tts POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:pocket_tts>
-            $<TARGET_FILE_DIR:pocket_tts>
-        COMMAND_EXPAND_LISTS
+# ================================
+# Shared Library Target
+# ================================
+if(BUILD_SHARED)
+    add_library(pocket_tts_lib SHARED
+        ${LIB_SOURCES}
+        src/pocket_tts_c.cpp
+    )
+    
+    set_target_properties(pocket_tts_lib PROPERTIES
+        OUTPUT_NAME "pocket_tts"
+        VERSION ${PROJECT_VERSION}
+        SOVERSION 1
+        PUBLIC_HEADER "include/pocket_tts/pocket_tts_c.h"
+    )
+    
+    target_include_directories(pocket_tts_lib PRIVATE ${COMMON_INCLUDES})
+    
+    if(NOT WIN32)
+        target_link_directories(pocket_tts_lib PRIVATE
+            ${SNDFILE_LIBRARY_DIRS}
+            ${SAMPLERATE_LIBRARY_DIRS}
+        )
+    endif()
+    
+    target_link_libraries(pocket_tts_lib PRIVATE ${COMMON_LIBS})
+    
+    # Export macros
+    target_compile_definitions(pocket_tts_lib PRIVATE POCKET_TTS_BUILDING_DLL)
+    
+    # Symbol visibility
+    if(NOT WIN32)
+        target_compile_options(pocket_tts_lib PRIVATE -fvisibility=hidden)
+    endif()
+    
+    # Compiler options
+    if(MSVC)
+        target_compile_options(pocket_tts_lib PRIVATE /W4 /O2)
+    else()
+        target_compile_options(pocket_tts_lib PRIVATE -Wall -Wextra -O2)
+    endif()
+    
+    # Installation
+    install(TARGETS pocket_tts_lib
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+        PUBLIC_HEADER DESTINATION include/pocket_tts
+    )
+    
+    # Also install all headers
+    install(DIRECTORY include/pocket_tts
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
     )
 endif()
 
-# Installation
-install(TARGETS pocket_tts RUNTIME DESTINATION bin)
+# ================================
+# CLI Executable Target
+# ================================
+if(BUILD_CLI)
+    add_executable(pocket_tts_cli
+        ${LIB_SOURCES}
+        src/main.cpp
+    )
+    
+    set_target_properties(pocket_tts_cli PROPERTIES
+        OUTPUT_NAME "pocket_tts"
+    )
+    
+    target_include_directories(pocket_tts_cli PRIVATE ${COMMON_INCLUDES})
+    
+    if(NOT WIN32)
+        target_link_directories(pocket_tts_cli PRIVATE
+            ${SNDFILE_LIBRARY_DIRS}
+            ${SAMPLERATE_LIBRARY_DIRS}
+        )
+    endif()
+    
+    target_link_libraries(pocket_tts_cli PRIVATE ${COMMON_LIBS})
+    
+    # Compiler options
+    if(MSVC)
+        target_compile_options(pocket_tts_cli PRIVATE /W4 /O2)
+    else()
+        target_compile_options(pocket_tts_cli PRIVATE -Wall -Wextra -O2)
+    endif()
+    
+    # Windows DLL copy
+    if(WIN32)
+        add_custom_command(TARGET pocket_tts_cli POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:pocket_tts_cli>
+                $<TARGET_FILE_DIR:pocket_tts_cli>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+    
+    install(TARGETS pocket_tts_cli RUNTIME DESTINATION bin)
+endif()
 
 # Print configuration summary
 message(STATUS "")
@@ -167,4 +238,6 @@ message(STATUS "=== Pocket TTS Configuration ===")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Build CLI: ${BUILD_CLI}")
+message(STATUS "Build Shared Library: ${BUILD_SHARED}")
 message(STATUS "")

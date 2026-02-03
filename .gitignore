@@ -7,6 +7,11 @@ out/
 # Models (download separately with download_models.sh)
 models/
 
+# Test outputs
+test/test_api
+test/PocketTTSTest/
+test/*.wav
+
 # IDE
 .vscode/
 .idea/
@@ -25,10 +30,6 @@ models/
 *.so
 *.dll
 *.dylib
-
-# Output files
-*.wav
-!models/reference_sample.wav
 
 # macOS
 .DS_Store
