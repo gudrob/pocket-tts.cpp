@@ -78,19 +78,29 @@ pocket_tts [options] <text> <voice_file> <output_file>
 
 Options:
   --models-dir <path>   Models directory (default: models/onnx)
+  --tokenizer <path>    Tokenizer path (default: models/tokenizer.model)
   --precision <p>       int8 or fp32 (default: int8)
   --temperature <t>     0.0-1.0 (default: 0.7)
+  --lsd-steps <n>       Flow matching steps (default: 10)
+  --max-frames <n>      Max frames to generate (default: 500)
   -h, --help            Show help
 ```
 
 ## C API (for FFI)
 
-The shared library exports a C API for Python, C#, and other languages:
+The shared library exports a C API for Python, C#, and other languages.
+**Note**: `std::cout` logging is disabled by default when using the C API.
 
 ```c
 #include "pocket_tts/pocket_tts_c.h"
 
-PocketTTSHandle tts = pocket_tts_create(NULL);
+// Configuration (optional, pass NULL for defaults)
+PocketTTSConfig config = {
+    .models_dir = "models/onnx",
+    // Defaults: precision="int8", temperature=0.7, etc.
+};
+
+PocketTTSHandle tts = pocket_tts_create(&config);
 VoiceHandle voice = pocket_tts_encode_voice(tts, "voice.wav");
 
 AudioResult result;

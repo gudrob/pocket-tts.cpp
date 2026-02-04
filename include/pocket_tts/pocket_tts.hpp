@@ -19,6 +19,7 @@ struct PocketTTSConfig {
     int lsdSteps = 10;               // Flow matching steps
     int maxFrames = 500;
     int framesAfterEos = 3;
+    bool verbose = true;
 };
 
 /**

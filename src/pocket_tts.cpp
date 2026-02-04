@@ -79,7 +79,9 @@ struct PocketTTS::Impl {
         std::string flowLmFlowPath = config.modelsDir + "/flow_lm_flow" + suffix + ".onnx";
         std::string mimiDecoderPath = config.modelsDir + "/mimi_decoder" + suffix + ".onnx";
         
-        std::cout << "Loading models from " << config.modelsDir << " (precision: " << config.precision << ")..." << std::endl;
+        if (config.verbose) {
+            std::cout << "Loading models from " << config.modelsDir << " (precision: " << config.precision << ")..." << std::endl;
+        }
         
         mimiEncoder = std::make_unique<Ort::Session>(env, mimiEncoderPath.c_str(), sessionOptions);
         textConditioner = std::make_unique<Ort::Session>(env, textConditionerPath.c_str(), sessionOptions);
@@ -87,12 +89,16 @@ struct PocketTTS::Impl {
         flowLmFlow = std::make_unique<Ort::Session>(env, flowLmFlowPath.c_str(), sessionOptions);
         mimiDecoder = std::make_unique<Ort::Session>(env, mimiDecoderPath.c_str(), sessionOptions);
         
-        std::cout << "Models loaded successfully." << std::endl;
+        if (config.verbose) {
+            std::cout << "Models loaded successfully." << std::endl;
+        }
     }
     
     void loadTokenizer() {
         tokenizer = std::make_unique<Tokenizer>(config.tokenizerPath);
-        std::cout << "Tokenizer loaded (vocab size: " << tokenizer->vocabSize() << ")." << std::endl;
+        if (config.verbose) {
+            std::cout << "Tokenizer loaded (vocab size: " << tokenizer->vocabSize() << ")." << std::endl;
+        }
     }
     
     void precomputeFlowBuffers() {
@@ -548,7 +554,9 @@ struct PocketTTS::Impl {
         float dt = 1.0f / config.lsdSteps;
         int eosStep = -1;
         
-        std::cout << "Generating latents..." << std::flush;
+        if (config.verbose) {
+            std::cout << "Generating latents..." << std::flush;
+        }
         
         for (int step = 0; step < config.maxFrames; ++step) {
             // Run main model
@@ -588,17 +596,23 @@ struct PocketTTS::Impl {
             allLatents.push_back(x);
             current = x;
             
-            if ((step + 1) % 10 == 0) {
+            if ((step + 1) % 10 == 0 && config.verbose) {
                 std::cout << "." << std::flush;
             }
         }
         
-        std::cout << " " << allLatents.size() << " frames" << std::endl;
+        if (config.verbose) {
+            std::cout << " " << allLatents.size() << " frames" << std::endl;
+        }
         
         // Decode to audio
-        std::cout << "Decoding audio..." << std::flush;
+        if (config.verbose) {
+            std::cout << "Decoding audio..." << std::flush;
+        }
         auto audio = decodeLatents(allLatents);
-        std::cout << " done" << std::endl;
+        if (config.verbose) {
+            std::cout << " done" << std::endl;
+        }
         
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
@@ -606,8 +620,10 @@ struct PocketTTS::Impl {
         float audioDuration = static_cast<float>(audio.size()) / SAMPLE_RATE;
         float rtfx = audioDuration / (duration / 1000.0f);
         
-        std::cout << "Generated " << audioDuration << "s audio in " 
-                  << (duration / 1000.0f) << "s (RTFx: " << rtfx << "x)" << std::endl;
+        if (config.verbose) {
+            std::cout << "Generated " << audioDuration << "s audio in " 
+                      << (duration / 1000.0f) << "s (RTFx: " << rtfx << "x)" << std::endl;
+        }
         
         return audio;
     }

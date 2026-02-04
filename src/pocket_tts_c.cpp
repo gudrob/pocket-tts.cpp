@@ -39,6 +39,9 @@ POCKET_TTS_API PocketTTSHandle pocket_tts_create(const PocketTTSConfig* config) 
             if (config->max_frames > 0) cfg.maxFrames = config->max_frames;
         }
         
+        // Disable stdout logging for C API
+        cfg.verbose = false;
+        
         auto* tts = new pocket_tts::PocketTTS(cfg);
         return static_cast<PocketTTSHandle>(tts);
     } catch (const std::exception& e) {
