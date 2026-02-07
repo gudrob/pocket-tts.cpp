@@ -61,6 +61,9 @@ struct PocketTTS::Impl {
     // Voice cache
     std::map<std::string, std::pair<std::vector<float>, std::vector<int64_t>>> voiceCache;
     
+    // Cancellation flag for streaming
+    std::atomic<bool> cancelRequested{false};
+    
     Impl(const PocketTTSConfig& cfg) : config(cfg) {
         sessionOptions.SetIntraOpNumThreads(4);
         sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -653,6 +656,305 @@ std::vector<float> PocketTTS::generateWithEmbeddings(
     // Store in cache temporarily
     impl_->voiceCache["__embeddings__"] = {voiceEmbeddings, voiceEmbeddingShape};
     return impl_->generate(text, "__embeddings__");
+}
+
+int PocketTTS::generateStreaming(
+    const std::string& text,
+    const std::vector<float>& voiceEmbeddings,
+    const std::vector<int64_t>& voiceEmbeddingShape,
+    AudioChunkCallback callback,
+    const StreamingConfig& streamConfig
+) {
+    if (!callback) {
+        throw std::invalid_argument("Callback must be provided");
+    }
+    
+    // Reset cancellation flag
+    impl_->cancelRequested = false;
+    
+    auto start = std::chrono::high_resolution_clock::now();
+    
+    // Tokenize text
+    auto tokenIds = impl_->tokenizer->encode(text);
+    
+    // Get text embeddings
+    auto textEmb = impl_->runTextConditioner(tokenIds);
+    std::vector<int64_t> textShape = {1, static_cast<int64_t>(tokenIds.size()), 1024};
+    
+    // Initialize flow LM state
+    auto lmState = impl_->initState(*impl_->flowLmMain);
+    
+    // Empty tensors for conditioning passes
+    std::vector<float> emptySeq;
+    std::vector<int64_t> emptySeqShape = {1, 0, 32};
+    std::vector<float> emptyText;
+    std::vector<int64_t> emptyTextShape = {1, 0, 1024};
+    
+    // Voice conditioning pass
+    auto [_, __] = impl_->runFlowLmMainStep(emptySeq, emptySeqShape, 
+                                            const_cast<std::vector<float>&>(voiceEmbeddings), 
+                                            const_cast<std::vector<int64_t>&>(voiceEmbeddingShape), 
+                                            lmState);
+    
+    // Text conditioning pass
+    std::tie(_, __) = impl_->runFlowLmMainStep(emptySeq, emptySeqShape, textEmb, textShape, lmState);
+    
+    // Autoregressive generation with streaming
+    std::vector<std::vector<float>> pendingLatents;
+    std::vector<float> current(32, std::nanf(""));
+    std::vector<int64_t> currentShape = {1, 1, 32};
+    
+    float dt = 1.0f / impl_->config.lsdSteps;
+    int eosStep = -1;
+    int totalSamples = 0;
+    
+    // Initialize decoder state for streaming
+    auto decoderState = impl_->initState(*impl_->mimiDecoder);
+    
+    if (impl_->config.verbose) {
+        std::cout << "Streaming latent generation..." << std::flush;
+    }
+    
+    for (int step = 0; step < impl_->config.maxFrames; ++step) {
+        // Check cancellation
+        if (streamConfig.enableCancellation && impl_->cancelRequested) {
+            if (impl_->config.verbose) {
+                std::cout << " cancelled" << std::endl;
+            }
+            break;
+        }
+        
+        // Run main model
+        auto [conditioning, eosLogit] = impl_->runFlowLmMainStep(
+            current, currentShape, emptyText, emptyTextShape, lmState
+        );
+        
+        // Check EOS
+        if (eosLogit > -4.0f && eosStep < 0) {
+            eosStep = step;
+        }
+        
+        // Stop after frames_after_eos
+        if (eosStep >= 0 && step >= eosStep + impl_->config.framesAfterEos) {
+            break;
+        }
+        
+        // Flow matching with Euler integration
+        std::vector<float> x(32);
+        if (impl_->config.temperature > 0) {
+            float stddev = std::sqrt(impl_->config.temperature);
+            std::normal_distribution<float> dist(0.0f, stddev);
+            for (auto& val : x) {
+                val = dist(impl_->rng);
+            }
+        }
+        
+        for (int j = 0; j < impl_->config.lsdSteps; ++j) {
+            float s = impl_->stBuffers[j].first;
+            float t = impl_->stBuffers[j].second;
+            auto flowOut = impl_->runFlowLmFlow(conditioning, s, t, x);
+            for (size_t k = 0; k < 32; ++k) {
+                x[k] += flowOut[k] * dt;
+            }
+        }
+        
+        pendingLatents.push_back(x);
+        current = x;
+        
+        // Decode and stream when we have enough frames
+        if (static_cast<int>(pendingLatents.size()) >= streamConfig.chunkSizeFrames || 
+            (eosStep >= 0 && step >= eosStep + impl_->config.framesAfterEos)) {
+            
+            // Decode pending latents
+            std::vector<float> chunkAudio;
+            
+            for (size_t i = 0; i < pendingLatents.size(); i += 15) {
+                size_t end = std::min(i + 15, pendingLatents.size());
+                size_t numFrames = end - i;
+                
+                // Combine frames: [1, numFrames, 32]
+                std::vector<float> chunk(numFrames * 32);
+                for (size_t j = 0; j < numFrames; ++j) {
+                    std::copy(pendingLatents[i + j].begin(), pendingLatents[i + j].end(), 
+                              chunk.begin() + j * 32);
+                }
+                
+                std::vector<int64_t> chunkShape = {1, static_cast<int64_t>(numFrames), 32};
+                
+                // Build decoder inputs
+                Ort::AllocatorWithDefaultOptions allocator;
+                std::vector<Ort::Value> inputTensors;
+                std::vector<const char*> inputNames;
+                std::vector<std::string> inputNameStrs;
+                
+                inputTensors.push_back(createTensor(impl_->memoryInfo, chunk, chunkShape));
+                inputNameStrs.push_back("latent");
+                
+                // State inputs in sorted order
+                std::vector<std::string> stateNames;
+                for (auto& [name, entry] : decoderState) {
+                    stateNames.push_back(name);
+                }
+                std::sort(stateNames.begin(), stateNames.end(), [](const std::string& a, const std::string& b) {
+                    int idxA = std::stoi(a.substr(6));
+                    int idxB = std::stoi(b.substr(6));
+                    return idxA < idxB;
+                });
+                
+                for (const auto& name : stateNames) {
+                    inputTensors.push_back(impl_->createStateValue(decoderState[name]));
+                    inputNameStrs.push_back(name);
+                }
+                
+                for (const auto& name : inputNameStrs) {
+                    inputNames.push_back(name.c_str());
+                }
+                
+                // Get output names
+                size_t numOutputs = impl_->mimiDecoder->GetOutputCount();
+                std::vector<std::string> outputNameStrs;
+                std::vector<const char*> outputNames;
+                for (size_t o = 0; o < numOutputs; ++o) {
+                    auto namePtr = impl_->mimiDecoder->GetOutputNameAllocated(o, allocator);
+                    outputNameStrs.push_back(namePtr.get());
+                }
+                for (const auto& name : outputNameStrs) {
+                    outputNames.push_back(name.c_str());
+                }
+                
+                // Run decoder
+                auto outputs = impl_->mimiDecoder->Run(
+                    Ort::RunOptions{nullptr},
+                    inputNames.data(), inputTensors.data(), inputTensors.size(),
+                    outputNames.data(), outputNames.size()
+                );
+                
+                // Get audio output
+                auto& audioTensor = outputs[0];
+                auto audioInfo = audioTensor.GetTensorTypeAndShapeInfo();
+                size_t audioSize = audioInfo.GetElementCount();
+                float* audioData = audioTensor.GetTensorMutableData<float>();
+                chunkAudio.insert(chunkAudio.end(), audioData, audioData + audioSize);
+                
+                // Update decoder state
+                for (size_t k = 1; k < outputs.size(); ++k) {
+                    const std::string& outName = outputNameStrs[k];
+                    if (outName.find("out_state_") == 0) {
+                        int idx = std::stoi(outName.substr(10));
+                        std::string stateName = "state_" + std::to_string(idx);
+                        
+                        if (decoderState.find(stateName) != decoderState.end()) {
+                            impl_->updateStateFromOutput(decoderState[stateName], outputs[k]);
+                        }
+                    }
+                }
+            }
+            
+            // Call user callback with audio chunk
+            bool isFinal = (eosStep >= 0 && step >= eosStep + impl_->config.framesAfterEos);
+            callback(chunkAudio.data(), static_cast<int>(chunkAudio.size()), isFinal);
+            
+            totalSamples += static_cast<int>(chunkAudio.size());
+            pendingLatents.clear();
+            
+            if (impl_->config.verbose && !isFinal) {
+                std::cout << "." << std::flush;
+            }
+        }
+        
+        // Progress callback
+        if (streamConfig.onProgress) {
+            streamConfig.onProgress(step + 1, 0);  // 0 = unknown total
+        }
+    }
+    
+    // Decode and send any remaining latents
+    if (!pendingLatents.empty() && !impl_->cancelRequested) {
+        std::vector<float> finalAudio;
+        
+        for (size_t i = 0; i < pendingLatents.size(); i += 15) {
+            size_t end = std::min(i + 15, pendingLatents.size());
+            size_t numFrames = end - i;
+            
+            std::vector<float> chunk(numFrames * 32);
+            for (size_t j = 0; j < numFrames; ++j) {
+                std::copy(pendingLatents[i + j].begin(), pendingLatents[i + j].end(), 
+                          chunk.begin() + j * 32);
+            }
+            
+            std::vector<int64_t> chunkShape = {1, static_cast<int64_t>(numFrames), 32};
+            
+            Ort::AllocatorWithDefaultOptions allocator;
+            std::vector<Ort::Value> inputTensors;
+            std::vector<const char*> inputNames;
+            std::vector<std::string> inputNameStrs;
+            
+            inputTensors.push_back(createTensor(impl_->memoryInfo, chunk, chunkShape));
+            inputNameStrs.push_back("latent");
+            
+            std::vector<std::string> stateNames;
+            for (auto& [name, entry] : decoderState) {
+                stateNames.push_back(name);
+            }
+            std::sort(stateNames.begin(), stateNames.end(), [](const std::string& a, const std::string& b) {
+                int idxA = std::stoi(a.substr(6));
+                int idxB = std::stoi(b.substr(6));
+                return idxA < idxB;
+            });
+            
+            for (const auto& name : stateNames) {
+                inputTensors.push_back(impl_->createStateValue(decoderState[name]));
+                inputNameStrs.push_back(name);
+            }
+            
+            for (const auto& name : inputNameStrs) {
+                inputNames.push_back(name.c_str());
+            }
+            
+            size_t numOutputs = impl_->mimiDecoder->GetOutputCount();
+            std::vector<std::string> outputNameStrs;
+            std::vector<const char*> outputNames;
+            for (size_t o = 0; o < numOutputs; ++o) {
+                auto namePtr = impl_->mimiDecoder->GetOutputNameAllocated(o, allocator);
+                outputNameStrs.push_back(namePtr.get());
+            }
+            for (const auto& name : outputNameStrs) {
+                outputNames.push_back(name.c_str());
+            }
+            
+            auto outputs = impl_->mimiDecoder->Run(
+                Ort::RunOptions{nullptr},
+                inputNames.data(), inputTensors.data(), inputTensors.size(),
+                outputNames.data(), outputNames.size()
+            );
+            
+            auto& audioTensor = outputs[0];
+            auto audioInfo = audioTensor.GetTensorTypeAndShapeInfo();
+            size_t audioSize = audioInfo.GetElementCount();
+            float* audioData = audioTensor.GetTensorMutableData<float>();
+            finalAudio.insert(finalAudio.end(), audioData, audioData + audioSize);
+        }
+        
+        callback(finalAudio.data(), static_cast<int>(finalAudio.size()), true);
+        totalSamples += static_cast<int>(finalAudio.size());
+    }
+    
+    if (impl_->config.verbose) {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        float audioDuration = static_cast<float>(totalSamples) / SAMPLE_RATE;
+        float rtfx = audioDuration / (duration / 1000.0f);
+        
+        std::cout << " done" << std::endl;
+        std::cout << "Streamed " << audioDuration << "s audio in " 
+                  << (duration / 1000.0f) << "s (RTFx: " << rtfx << "x)" << std::endl;
+    }
+    
+    return totalSamples;
+}
+
+void PocketTTS::cancelStreaming() {
+    impl_->cancelRequested = true;
 }
 
 } // namespace pocket_tts

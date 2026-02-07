@@ -11,6 +11,16 @@ models/
 test/test_api
 test/PocketTTSTest/
 test/*.wav
+test_streaming
+streaming_output.wav
+
+# .NET build artifacts
+bin/
+obj/
+*.dll
+*.pdb
+*.deps.json
+*.runtimeconfig.json
 
 # IDE
 .vscode/
@@ -28,7 +38,6 @@ test/*.wav
 *.a
 *.lib
 *.so
-*.dll
 *.dylib
 
 # macOS

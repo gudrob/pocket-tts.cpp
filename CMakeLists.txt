@@ -232,6 +232,32 @@ if(BUILD_CLI)
     install(TARGETS pocket_tts_cli RUNTIME DESTINATION bin)
 endif()
 
+# ================================
+# Test Streaming Executable
+# ================================
+add_executable(test_streaming
+    ${LIB_SOURCES}
+    test/test_streaming.cpp
+)
+
+target_include_directories(test_streaming PRIVATE ${COMMON_INCLUDES})
+
+if(NOT WIN32)
+    target_link_directories(test_streaming PRIVATE
+        ${SNDFILE_LIBRARY_DIRS}
+        ${SAMPLERATE_LIBRARY_DIRS}
+    )
+endif()
+
+target_link_libraries(test_streaming PRIVATE ${COMMON_LIBS})
+
+# Compiler options
+if(MSVC)
+    target_compile_options(test_streaming PRIVATE /W4 /O2)
+else()
+    target_compile_options(test_streaming PRIVATE -Wall -Wextra -O2)
+endif()
+
 # Print configuration summary
 message(STATUS "")
 message(STATUS "=== Pocket TTS Configuration ===")

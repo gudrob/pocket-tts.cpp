@@ -102,6 +102,56 @@ POCKET_TTS_API int pocket_tts_generate(
  */
 POCKET_TTS_API void pocket_tts_free_audio(AudioResult* result);
 
+/**
+ * Callback for audio chunks during streaming generation.
+ * 
+ * @param samples Audio samples (24kHz mono float)
+ * @param sample_count Number of samples in this chunk
+ * @param is_final 1 if this is the final chunk, 0 otherwise
+ * @param user_data User-provided context pointer
+ */
+typedef void (*AudioChunkCallbackC)(
+    const float* samples,
+    int sample_count,
+    int is_final,
+    void* user_data
+);
+
+/*
+ * Configuration for streaming generation.
+ */
+typedef struct {
+    int chunk_size_frames;      /* Decode every N frames (default: 5) */
+    void* user_data;            /* User context passed to callback */
+} StreamingConfig;
+
+/*
+ * Generate speech with streaming callback.
+ * Audio chunks are delivered progressively as they become available.
+ *
+ * @param handle PocketTTS instance
+ * @param text Text to synthesize
+ * @param voice Voice handle from pocket_tts_encode_voice
+ * @param callback Called for each audio chunk
+ * @param config Streaming configuration (pass NULL for defaults)
+ * @return Total number of samples generated, or negative on error
+ */
+POCKET_TTS_API int pocket_tts_generate_streaming(
+    PocketTTSHandle handle,
+    const char* text,
+    VoiceHandle voice,
+    AudioChunkCallbackC callback,
+    const StreamingConfig* config
+);
+
+/*
+ * Cancel ongoing streaming generation.
+ * Only works if streaming was started with cancellation enabled.
+ *
+ * @param handle PocketTTS instance
+ */
+POCKET_TTS_API void pocket_tts_cancel_streaming(PocketTTSHandle handle);
+
 /*
  * Get the last error message.
  * The returned string is valid until the next API call.

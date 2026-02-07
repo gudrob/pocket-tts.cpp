@@ -160,6 +160,66 @@ POCKET_TTS_API const char* pocket_tts_get_last_error(void) {
     return g_lastError.c_str();
 }
 
+POCKET_TTS_API int pocket_tts_generate_streaming(
+    PocketTTSHandle handle,
+    const char* text,
+    VoiceHandle voice,
+    AudioChunkCallbackC callback,
+    const StreamingConfig* config
+) {
+    if (!handle || !text || !voice || !callback) {
+        setError("Invalid parameters");
+        return -1;
+    }
+    
+    try {
+        auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
+        auto* voiceData = static_cast<VoiceData*>(voice);
+        
+        // Capture user_data for the callback
+        void* userData = config ? config->user_data : nullptr;
+        
+        // Create C++ callback wrapper that calls the C callback
+        auto cppCallback = [callback, userData](const float* samples, int count, bool isFinal) {
+            callback(samples, count, isFinal ? 1 : 0, userData);
+        };
+        
+        // Build streaming config
+        pocket_tts::StreamingConfig streamCfg;
+        if (config && config->chunk_size_frames > 0) {
+            streamCfg.chunkSizeFrames = config->chunk_size_frames;
+        }
+        streamCfg.enableCancellation = true;  // Always enable for C API
+        
+        // Call C++ streaming implementation
+        int totalSamples = tts->generateStreaming(
+            text,
+            voiceData->embeddings,
+            voiceData->shape,
+            cppCallback,
+            streamCfg
+        );
+        
+        return totalSamples;
+    } catch (const std::exception& e) {
+        setError(std::string("Streaming failed: ") + e.what());
+        return -1;
+    }
+}
+
+POCKET_TTS_API void pocket_tts_cancel_streaming(PocketTTSHandle handle) {
+    if (!handle) {
+        return;
+    }
+    
+    try {
+        auto* tts = static_cast<pocket_tts::PocketTTS*>(handle);
+        tts->cancelStreaming();
+    } catch (...) {
+        // Ignore errors during cancellation
+    }
+}
+
 POCKET_TTS_API const char* pocket_tts_version(void) {
     return VERSION;
 }

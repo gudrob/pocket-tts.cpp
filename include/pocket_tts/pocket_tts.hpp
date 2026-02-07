@@ -9,6 +9,37 @@
 namespace pocket_tts {
 
 /**
+ * @brief Callback for audio chunks during streaming generation
+ * @param samples Audio samples (float32, 24kHz mono)
+ * @param sampleCount Number of samples in this chunk
+ * @param isFinal True if this is the final chunk
+ */
+using AudioChunkCallback = std::function<void(const float* samples, int sampleCount, bool isFinal)>;
+
+/**
+ * @brief Callback for generation progress (optional)
+ * @param currentFrame Current frame being generated
+ * @param totalFrames Total frames (0 if unknown/unlimited)
+ */
+using ProgressCallback = std::function<void(int currentFrame, int totalFrames)>;
+
+/**
+ * @brief Configuration for streaming generation
+ */
+struct StreamingConfig {
+    /// Number of frames to accumulate before decoding and calling callback
+    /// Higher values = better throughput, lower values = lower latency
+    /// Default: 5 frames (~400ms of audio)
+    int chunkSizeFrames = 5;
+    
+    /// Optional progress callback
+    ProgressCallback onProgress = nullptr;
+    
+    /// Enable cancellation support (adds overhead for atomic checks)
+    bool enableCancellation = false;
+};
+
+/**
  * @brief Configuration for PocketTTS inference
  */
 struct PocketTTSConfig {
@@ -81,6 +112,36 @@ public:
         const std::vector<float>& voiceEmbeddings,
         const std::vector<int64_t>& voiceEmbeddingShape
     );
+    
+    /**
+     * @brief Generate audio with streaming callback
+     * 
+     * This method generates audio in chunks, calling the provided callback
+     * for each chunk as it becomes available. This allows for lower latency
+     * to first audio and enables real-time playback during generation.
+     * 
+     * @param text Text to synthesize
+     * @param voiceEmbeddings Pre-computed voice embeddings
+     * @param voiceEmbeddingShape Shape [batch, seq, dim]
+     * @param callback Called for each audio chunk (samples, count, isFinal)
+     * @param streamConfig Streaming configuration (chunk size, callbacks, etc.)
+     * @return Total number of samples generated
+     */
+    int generateStreaming(
+        const std::string& text,
+        const std::vector<float>& voiceEmbeddings,
+        const std::vector<int64_t>& voiceEmbeddingShape,
+        AudioChunkCallback callback,
+        const StreamingConfig& streamConfig = StreamingConfig{}
+    );
+    
+    /**
+     * @brief Cancel ongoing streaming generation
+     * 
+     * This will cause the current generateStreaming call to stop early.
+     * Only works if StreamingConfig.enableCancellation is true.
+     */
+    void cancelStreaming();
 
 private:
     struct Impl;

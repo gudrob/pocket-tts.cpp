@@ -4,11 +4,12 @@ A pure C++ port of [Pocket TTS ONNX](https://huggingface.co/KevinAHM/pocket-tts-
 
 ## Features
 
-- 🚀 **No Python dependency** for inference
-- 🔊 **Voice cloning** from any reference audio
-- ⚡ **~3x real-time** on Apple Silicon (INT8)
-- 📦 **~200MB total model size**
-- 🔗 **C API** for FFI bindings (Python, C#, etc.)
+- **No Python dependency** for inference
+- **Voice cloning** from any reference audio
+- **~3x real-time** performance on Apple Silicon (INT8)
+- **~200MB total model size**
+- **C API** for FFI bindings (Python, C#, etc.)
+- **Audio streaming** for low-latency playback
 
 ## Quick Start
 
@@ -91,6 +92,8 @@ Options:
 The shared library exports a C API for Python, C#, and other languages.
 **Note**: `std::cout` logging is disabled by default when using the C API.
 
+### Basic Generation
+
 ```c
 #include "pocket_tts/pocket_tts_c.h"
 
@@ -112,12 +115,30 @@ pocket_tts_free_voice(voice);
 pocket_tts_destroy(tts);
 ```
 
+### Streaming Generation
+
+```c
+void audio_callback(const float* samples, int count, int is_final, void* user_data) {
+    printf("Received %d samples%s\n", count, is_final ? " [FINAL]" : "");
+    // Process audio chunk (e.g., play, save, etc.)
+}
+
+StreamingConfig stream_cfg = {
+    .chunk_size_frames = 5,  // ~400ms chunks
+    .user_data = NULL
+};
+
+int total_samples = pocket_tts_generate_streaming(
+    tts, "Hello from streaming!", voice, audio_callback, &stream_cfg
+);
+```
+
 ## Language Bindings
 
 | Language | File | Run |
 |----------|------|-----|
 | **Python** | [test/test_api.py](test/test_api.py) | `python3 test/test_api.py` |
-| **C#** | [test/PocketTTS.cs](test/PocketTTS.cs) | See file for usage |
+| **C#** | [test/PocketTTS.cs](test/PocketTTS.cs) | `dotnet run --project test/StreamingExample.csproj` |
 | **C** | [test/test_api.c](test/test_api.c) | `clang -o test test/test_api.c -I include -L build -lpocket_tts` |
 
 ## Build Options
