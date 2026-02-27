@@ -8,7 +8,9 @@
 
 /* Platform-specific export macros */
 #ifdef _WIN32
-    #ifdef POCKET_TTS_BUILDING_DLL
+    #ifdef POCKET_TTS_STATIC
+        #define POCKET_TTS_API
+    #elif defined(POCKET_TTS_BUILDING_DLL)
         #define POCKET_TTS_API __declspec(dllexport)
     #else
         #define POCKET_TTS_API __declspec(dllimport)

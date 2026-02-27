@@ -13,18 +13,35 @@ A pure C++ port of [Pocket TTS ONNX](https://huggingface.co/KevinAHM/pocket-tts-
 
 ## Quick Start
 
+### macOS/Linux
+
 ```bash
-# Clone & download models
+# 1) Install platform prerequisites first (see section below)
+#
+# 2) Clone & download models
 git clone https://github.com/gudrob/pocket-tts.cpp.git
 cd pocket-tts.cpp
 ./download_models.sh
 
-# Build
+# 3) Build (macOS/Linux example)
 mkdir build && cd build
 cmake .. && make -j4
 
-# Run
+# 4) Run
 ./pocket_tts "Hello, this is a test." ../models/reference_sample.wav output.wav
+```
+
+### Windows (PowerShell)
+
+```powershell
+# 1) Install Windows prerequisites first (see section below)
+#
+# 2) Clone
+git clone https://github.com/gudrob/pocket-tts.cpp.git
+cd pocket-tts.cpp
+
+# 3) Download models (uses temporary Python venv)
+.\download_models.bat
 ```
 
 ## Prerequisites
@@ -33,7 +50,7 @@ cmake .. && make -j4
 <summary><b>macOS (Homebrew)</b></summary>
 
 ```bash
-brew install onnxruntime sentencepiece libsndfile libsamplerate cmake
+brew install onnxruntime sentencepiece cmake
 ```
 </details>
 
@@ -41,7 +58,7 @@ brew install onnxruntime sentencepiece libsndfile libsamplerate cmake
 <summary><b>Linux (Ubuntu/Debian)</b></summary>
 
 ```bash
-sudo apt install -y cmake build-essential pkg-config libsndfile1-dev libsamplerate0-dev
+sudo apt install -y cmake build-essential pkg-config
 
 # SentencePiece
 git clone https://github.com/google/sentencepiece.git
@@ -61,14 +78,32 @@ sudo ldconfig
 <summary><b>Windows (vcpkg)</b></summary>
 
 ```powershell
-git clone https://github.com/Microsoft/vcpkg.git && cd vcpkg
-.\bootstrap-vcpkg.bat && .\vcpkg integrate install
+# If your project path contains spaces, create a drive alias without spaces
+subst P: "C:\path\to\pocket-tts.cpp"
+P:
 
-.\vcpkg install onnxruntime:x64-windows sentencepiece:x64-windows libsndfile:x64-windows libsamplerate:x64-windows
+# Bootstrap local vcpkg (repo already contains a vcpkg folder)
+cd vcpkg
+.\bootstrap-vcpkg.bat
+cd ..
+
+# Install required dependencies
+.\vcpkg\vcpkg.exe install onnxruntime:x64-windows sentencepiece:x64-windows
+
+# Download models (uses temporary Python venv)
+.\download_models.bat
 
 mkdir build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg_root]/scripts/buildsystems/vcpkg.cmake
-cmake --build . --config Release
+cmake .. `
+  -DBUILD_SHARED=OFF `
+  -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
+  -DONNXRUNTIME_INCLUDE_DIRS=../vcpkg/installed/x64-windows/include/onnxruntime `
+  -DONNXRUNTIME_LIBRARIES=../vcpkg/installed/x64-windows/lib/onnxruntime.lib `
+  -DSENTENCEPIECE_INCLUDE_DIRS=../vcpkg/installed/x64-windows/include `
+  -DSENTENCEPIECE_LIBRARIES=../vcpkg/installed/x64-windows/lib/sentencepiece.lib
+
+cmake --build . --config Release --target pocket_tts_cli
+.\Release\pocket_tts.exe --help
 ```
 </details>
 

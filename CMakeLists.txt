@@ -111,6 +111,27 @@ set(COMMON_LIBS
     ${SENTENCEPIECE_LIBRARIES}
 )
 
+# vcpkg sentencepiece on Windows is often static and needs transitive deps explicitly.
+if(WIN32)
+    get_filename_component(_SP_LIB_DIR "${SENTENCEPIECE_LIBRARIES}" DIRECTORY)
+    if(EXISTS "${_SP_LIB_DIR}")
+        file(GLOB _ABSL_LIBS "${_SP_LIB_DIR}/absl*.lib")
+        foreach(_extra_lib IN ITEMS
+            "${_SP_LIB_DIR}/abseil_dll.lib"
+            "${_SP_LIB_DIR}/libprotobuf.lib"
+            "${_SP_LIB_DIR}/libprotobuf-lite.lib"
+            "${_SP_LIB_DIR}/re2.lib"
+            "${_SP_LIB_DIR}/utf8_range.lib"
+            "${_SP_LIB_DIR}/utf8_validity.lib"
+        )
+            if(EXISTS "${_extra_lib}")
+                list(APPEND _ABSL_LIBS "${_extra_lib}")
+            endif()
+        endforeach()
+        list(APPEND COMMON_LIBS ${_ABSL_LIBS})
+    endif()
+endif()
+
 if(APPLE)
     list(APPEND COMMON_LIBS
         ${COREML_FRAMEWORK}
@@ -197,14 +218,8 @@ if(BUILD_CLI)
         target_compile_options(pocket_tts_cli PRIVATE -Wall -Wextra -O2)
     endif()
     
-    # Windows DLL copy
-    if(WIN32)
-        add_custom_command(TARGET pocket_tts_cli POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:pocket_tts_cli>
-                $<TARGET_FILE_DIR:pocket_tts_cli>
-            COMMAND_EXPAND_LISTS
-        )
+    if(WIN32 AND NOT BUILD_SHARED)
+        target_compile_definitions(pocket_tts_cli PRIVATE POCKET_TTS_STATIC)
     endif()
     
     install(TARGETS pocket_tts_cli RUNTIME DESTINATION bin)
@@ -229,6 +244,10 @@ if(MSVC)
     target_compile_options(test_streaming PRIVATE /W4 /O2)
 else()
     target_compile_options(test_streaming PRIVATE -Wall -Wextra -O2)
+endif()
+
+if(WIN32 AND NOT BUILD_SHARED)
+    target_compile_definitions(test_streaming PRIVATE POCKET_TTS_STATIC)
 endif()
 
 # Print configuration summary
