@@ -53,7 +53,7 @@ endif()
 message(STATUS "ONNX Runtime include: ${ONNXRUNTIME_INCLUDE_DIRS}")
 message(STATUS "ONNX Runtime library: ${ONNXRUNTIME_LIBRARIES}")
 
-# SentencePiece
+# SentencePiece (prefer static)
 find_path(SENTENCEPIECE_INCLUDE_DIRS
     NAMES sentencepiece_processor.h
     PATHS 
@@ -63,8 +63,9 @@ find_path(SENTENCEPIECE_INCLUDE_DIRS
         ${SENTENCEPIECE_ROOT}/include
 )
 
+# Try static library first, fall back to shared
 find_library(SENTENCEPIECE_LIBRARIES
-    NAMES sentencepiece
+    NAMES libsentencepiece.a sentencepiece
     PATHS 
         /opt/homebrew/lib
         /usr/local/lib
@@ -80,16 +81,7 @@ endif()
 message(STATUS "SentencePiece include: ${SENTENCEPIECE_INCLUDE_DIRS}")
 message(STATUS "SentencePiece library: ${SENTENCEPIECE_LIBRARIES}")
 
-# libsndfile and libsamplerate
-if(WIN32)
-    find_path(SNDFILE_INCLUDE_DIRS NAMES sndfile.h)
-    find_library(SNDFILE_LIBRARIES NAMES sndfile libsndfile-1)
-    find_path(SAMPLERATE_INCLUDE_DIRS NAMES samplerate.h)
-    find_library(SAMPLERATE_LIBRARIES NAMES samplerate libsamplerate-0)
-else()
-    pkg_check_modules(SNDFILE REQUIRED sndfile)
-    pkg_check_modules(SAMPLERATE REQUIRED samplerate)
-endif()
+
 
 # Apple Frameworks
 if(APPLE)
@@ -111,16 +103,12 @@ set(COMMON_INCLUDES
     ${ONNXRUNTIME_INCLUDE_DIRS}
     ${ONNXRUNTIME_INCLUDE_DIRS}/..
     ${SENTENCEPIECE_INCLUDE_DIRS}
-    ${SNDFILE_INCLUDE_DIRS}
-    ${SAMPLERATE_INCLUDE_DIRS}
 )
 
 # Common link libraries
 set(COMMON_LIBS
     ${ONNXRUNTIME_LIBRARIES}
     ${SENTENCEPIECE_LIBRARIES}
-    ${SNDFILE_LIBRARIES}
-    ${SAMPLERATE_LIBRARIES}
 )
 
 if(APPLE)
@@ -149,12 +137,7 @@ if(BUILD_SHARED)
     
     target_include_directories(pocket_tts_lib PRIVATE ${COMMON_INCLUDES})
     
-    if(NOT WIN32)
-        target_link_directories(pocket_tts_lib PRIVATE
-            ${SNDFILE_LIBRARY_DIRS}
-            ${SAMPLERATE_LIBRARY_DIRS}
-        )
-    endif()
+
     
     target_link_libraries(pocket_tts_lib PRIVATE ${COMMON_LIBS})
     
@@ -203,12 +186,7 @@ if(BUILD_CLI)
     
     target_include_directories(pocket_tts_cli PRIVATE ${COMMON_INCLUDES})
     
-    if(NOT WIN32)
-        target_link_directories(pocket_tts_cli PRIVATE
-            ${SNDFILE_LIBRARY_DIRS}
-            ${SAMPLERATE_LIBRARY_DIRS}
-        )
-    endif()
+
     
     target_link_libraries(pocket_tts_cli PRIVATE ${COMMON_LIBS})
     
@@ -242,12 +220,7 @@ add_executable(test_streaming
 
 target_include_directories(test_streaming PRIVATE ${COMMON_INCLUDES})
 
-if(NOT WIN32)
-    target_link_directories(test_streaming PRIVATE
-        ${SNDFILE_LIBRARY_DIRS}
-        ${SAMPLERATE_LIBRARY_DIRS}
-    )
-endif()
+
 
 target_link_libraries(test_streaming PRIVATE ${COMMON_LIBS})
 

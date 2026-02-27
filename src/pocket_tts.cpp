@@ -65,7 +65,7 @@ struct PocketTTS::Impl {
     std::atomic<bool> cancelRequested{false};
     
     Impl(const PocketTTSConfig& cfg) : config(cfg) {
-        sessionOptions.SetIntraOpNumThreads(4);
+        sessionOptions.SetIntraOpNumThreads(3);
         sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         
         loadModels();
@@ -86,7 +86,9 @@ struct PocketTTS::Impl {
             std::cout << "Loading models from " << config.modelsDir << " (precision: " << config.precision << ")..." << std::endl;
         }
         
-        mimiEncoder = std::make_unique<Ort::Session>(env, mimiEncoderPath.c_str(), sessionOptions);
+        if (config.loadVoiceEncoder) {
+            mimiEncoder = std::make_unique<Ort::Session>(env, mimiEncoderPath.c_str(), sessionOptions);
+        }
         textConditioner = std::make_unique<Ort::Session>(env, textConditionerPath.c_str(), sessionOptions);
         flowLmMain = std::make_unique<Ort::Session>(env, flowLmMainPath.c_str(), sessionOptions);
         flowLmFlow = std::make_unique<Ort::Session>(env, flowLmFlowPath.c_str(), sessionOptions);
@@ -229,9 +231,19 @@ struct PocketTTS::Impl {
         if (it != voiceCache.end()) {
             return it->second.first;
         }
-        
+
+        if (!mimiEncoder) {
+            throw std::runtime_error("Voice encoder is disabled (loadVoiceEncoder=false).");
+        }
+
         // Load audio
         auto audio = AudioUtils::loadWav(audioPath, AudioUtils::TARGET_SAMPLE_RATE);
+        // Long reference clips explode KV-cache memory in the autoregressive pass.
+        // A short reference (few seconds) is enough for stable voice conditioning.
+        constexpr size_t MAX_REFERENCE_SAMPLES = static_cast<size_t>(AudioUtils::TARGET_SAMPLE_RATE) * 5;
+        if (audio.size() > MAX_REFERENCE_SAMPLES) {
+            audio.resize(MAX_REFERENCE_SAMPLES);
+        }
         
         // Prepare input: [1, 1, samples]
         std::vector<int64_t> audioShape = {1, 1, static_cast<int64_t>(audio.size())};

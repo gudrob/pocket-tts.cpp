@@ -6,6 +6,17 @@
 #include <map>
 #include <functional>
 
+/* Platform-specific export macros */
+#ifdef _WIN32
+    #ifdef POCKET_TTS_BUILDING_DLL
+        #define POCKET_TTS_API __declspec(dllexport)
+    #else
+        #define POCKET_TTS_API __declspec(dllimport)
+    #endif
+#else
+    #define POCKET_TTS_API __attribute__((visibility("default")))
+#endif
+
 namespace pocket_tts {
 
 /**
@@ -26,7 +37,7 @@ using ProgressCallback = std::function<void(int currentFrame, int totalFrames)>;
 /**
  * @brief Configuration for streaming generation
  */
-struct StreamingConfig {
+struct POCKET_TTS_API StreamingConfig {
     /// Number of frames to accumulate before decoding and calling callback
     /// Higher values = better throughput, lower values = lower latency
     /// Default: 5 frames (~400ms of audio)
@@ -42,7 +53,7 @@ struct StreamingConfig {
 /**
  * @brief Configuration for PocketTTS inference
  */
-struct PocketTTSConfig {
+struct POCKET_TTS_API PocketTTSConfig {
     std::string modelsDir = "models/onnx";
     std::string tokenizerPath = "models/tokenizer.model";
     std::string precision = "int8";  // "int8" or "fp32"
@@ -50,6 +61,7 @@ struct PocketTTSConfig {
     int lsdSteps = 10;               // Flow matching steps
     int maxFrames = 500;
     int framesAfterEos = 3;
+    bool loadVoiceEncoder = true;    // Load mimi_encoder.onnx
     bool verbose = true;
 };
 
@@ -61,7 +73,7 @@ struct PocketTTSConfig {
  * - Voice cloning from audio files
  * - Temperature control for generation diversity
  */
-class PocketTTS {
+class POCKET_TTS_API PocketTTS {
 public:
     static constexpr int SAMPLE_RATE = 24000;
     static constexpr int SAMPLES_PER_FRAME = 1920;
