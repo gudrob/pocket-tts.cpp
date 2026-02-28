@@ -57,3 +57,8 @@ compile_commands.json
 
 # Package managers
 vcpkg_installed/
+
+# Node addon
+bindings/node/node_modules/
+bindings/node/build/
+bindings/node/prebuilds/
