@@ -64,13 +64,24 @@ jobs:
         if: matrix.os == 'windows'
         shell: pwsh
         run: |
-          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          if (!(Test-Path 'C:\vcpkg')) {
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          }
           C:\vcpkg\bootstrap-vcpkg.bat
-          C:\vcpkg\vcpkg install onnxruntime:x64-windows-static sentencepiece:x64-windows-static libsndfile:x64-windows-static libsamplerate:x64-windows-static
-          "ONNXRUNTIME_ROOT=C:\vcpkg\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "SENTENCEPIECE_ROOT=C:\vcpkg\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "SNDFILE_ROOT=C:\vcpkg\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "SAMPLERATE_ROOT=C:\vcpkg\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Append
+          C:\vcpkg\vcpkg install onnxruntime:x64-windows sentencepiece:x64-windows libsndfile:x64-windows libsamplerate:x64-windows
+          "ONNXRUNTIME_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
+          "SENTENCEPIECE_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
+          "SNDFILE_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
+          "SAMPLERATE_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
+
+      - name: Debug native path resolution (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'C:\vcpkg\installed\x64-windows\include\sentencepiece_processor.h')) {
+            throw "sentencepiece_processor.h not found in vcpkg include dir"
+          }
+          node -p "JSON.stringify(require('./scripts/gyp-paths'), null, 2)"
 
       - name: Install npm deps
         run: npm install

@@ -7,6 +7,10 @@ function uniq(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function toPosix(value) {
+  return value.replace(/\\/g, "/");
+}
+
 function splitEnvPath(name) {
   const value = process.env[name];
   if (!value) {
@@ -42,15 +46,17 @@ const prefixes = uniq([
   ...defaultPrefixes
 ]);
 
-const includeDirs = existingDirs(
-  uniq([
-    path.resolve(__dirname, "../../../include"),
-    ...prefixes.flatMap((prefix) => [
-      path.join(prefix, "include"),
-      path.join(prefix, "include", "onnxruntime"),
-      path.join(prefix, "include", "onnxruntime", "core", "session")
-    ])
+const includeCandidates = uniq([
+  path.resolve(__dirname, "../../../include"),
+  ...prefixes.flatMap((prefix) => [
+    path.join(prefix, "include"),
+    path.join(prefix, "include", "onnxruntime"),
+    path.join(prefix, "include", "onnxruntime", "core", "session")
   ])
+]);
+
+const includeDirs = (platform === "win32" ? includeCandidates : existingDirs(includeCandidates)).map(
+  toPosix
 );
 
 function findLibFile(fileName) {
@@ -75,15 +81,15 @@ if (platform === "win32") {
   libraries = windowsLibs.map((libName) => {
     const discovered = findLibFile(libName);
     if (discovered) {
-      return discovered;
+      return toPosix(discovered);
     }
-    return path.join(prefixes[0], "lib", libName);
+    return toPosix(path.join(prefixes[0], "lib", libName));
   });
 } else {
   const libDirs = existingDirs(uniq(prefixes.map((prefix) => path.join(prefix, "lib"))));
 
   libraries = uniq([
-    ...libDirs.map((dir) => `-L${dir}`),
+    ...libDirs.map((dir) => `-L${toPosix(dir)}`),
     "-lonnxruntime",
     "-lsentencepiece",
     "-lsndfile",

@@ -9,6 +9,7 @@
 #include <random>
 #include <chrono>
 #include <numeric>
+#include <atomic>
 
 namespace pocket_tts {
 namespace {
