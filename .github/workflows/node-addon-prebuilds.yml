@@ -43,13 +43,13 @@ jobs:
       - name: Install native deps (macOS)
         if: matrix.os == 'macos'
         run: |
-          brew install onnxruntime sentencepiece libsndfile libsamplerate
+          brew install onnxruntime sentencepiece
 
       - name: Install native deps (Linux)
         if: matrix.os == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config curl libsentencepiece-dev libsndfile1-dev libsamplerate0-dev
+          sudo apt-get install -y build-essential pkg-config curl libsentencepiece-dev
           sudo apt-get install -y libonnxruntime-dev || true
           if [ ! -f /usr/lib/x86_64-linux-gnu/libonnxruntime.so ] && [ ! -f /usr/local/lib/libonnxruntime.so ]; then
             ORT_VERSION=1.17.0
@@ -60,6 +60,15 @@ jobs:
             sudo ldconfig
           fi
 
+      - name: Restore vcpkg cache (Windows)
+        if: matrix.os == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg-cache\downloads
+            C:\vcpkg-cache\bincache
+          key: windows-vcpkg-x64-windows-release-v1
+
       - name: Install native deps (Windows via vcpkg)
         if: matrix.os == 'windows'
         shell: pwsh
@@ -67,24 +76,38 @@ jobs:
           if (!(Test-Path 'C:\vcpkg')) {
             git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
           }
+          $cacheRoot = 'C:\vcpkg-cache'
+          New-Item -ItemType Directory -Path "$cacheRoot\downloads" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$cacheRoot\bincache" -Force | Out-Null
+
+          $env:VCPKG_ROOT = 'C:\vcpkg'
+          $env:VCPKG_DOWNLOADS = "$cacheRoot\downloads"
+          $env:VCPKG_DEFAULT_BINARY_CACHE = "$cacheRoot\bincache"
+          $env:VCPKG_BINARY_SOURCES = "clear;files,$($env:VCPKG_DEFAULT_BINARY_CACHE),readwrite"
+          $triplet = 'x64-windows-release'
+          $tripletFile = 'C:\vcpkg\triplets\community\x64-windows-release.cmake'
+          @"
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_LIBRARY_LINKAGE dynamic)
+          set(VCPKG_BUILD_TYPE release)
+          "@ | Set-Content -Path $tripletFile -Encoding ascii
           C:\vcpkg\bootstrap-vcpkg.bat
-          C:\vcpkg\vcpkg install onnxruntime:x64-windows sentencepiece:x64-windows libsndfile:x64-windows libsamplerate:x64-windows
-          "ONNXRUNTIME_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
-          "SENTENCEPIECE_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
-          "SNDFILE_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
-          "SAMPLERATE_ROOT=C:/vcpkg/installed/x64-windows" >> $env:GITHUB_ENV
+          C:\vcpkg\vcpkg install onnxruntime:$triplet sentencepiece:$triplet --overlay-triplets=C:\vcpkg\triplets\community
+          "ONNXRUNTIME_ROOT=C:/vcpkg/installed/$triplet" >> $env:GITHUB_ENV
+          "SENTENCEPIECE_ROOT=C:/vcpkg/installed/$triplet" >> $env:GITHUB_ENV
 
       - name: Debug native path resolution (Windows)
         if: matrix.os == 'windows'
         shell: pwsh
         run: |
-          if (!(Test-Path 'C:\vcpkg\installed\x64-windows\include\sentencepiece_processor.h')) {
+          if (!(Test-Path 'C:\vcpkg\installed\x64-windows-release\include\sentencepiece_processor.h')) {
             throw "sentencepiece_processor.h not found in vcpkg include dir"
           }
           node -p "JSON.stringify(require('./scripts/gyp-paths'), null, 2)"
 
       - name: Install npm deps
-        run: npm install
+        run: npm install --ignore-scripts
 
       - name: Build prebuilds
         run: npm run prebuild

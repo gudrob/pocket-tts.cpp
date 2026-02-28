@@ -8,13 +8,11 @@ Node.js N-API bindings for `pocket-tts-cpp`.
 - Native dependencies from the C++ project:
   - ONNX Runtime
   - SentencePiece
-  - libsndfile
-  - libsamplerate
 
 ## Local Build (macOS)
 
 ```bash
-brew install onnxruntime sentencepiece libsndfile libsamplerate
+brew install onnxruntime sentencepiece
 
 cd bindings/node
 npm install
@@ -28,8 +26,6 @@ If your dependencies are in non-standard locations, set one or more:
 - `POCKET_TTS_PREFIX` (path list, separated by `:` on macOS/Linux, `;` on Windows)
 - `ONNXRUNTIME_ROOT`
 - `SENTENCEPIECE_ROOT`
-- `SNDFILE_ROOT`
-- `SAMPLERATE_ROOT`
 
 ## JavaScript Usage
 

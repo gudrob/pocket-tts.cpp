@@ -41,8 +41,6 @@ const prefixes = uniq([
   ...splitEnvPath("POCKET_TTS_PREFIX"),
   process.env.ONNXRUNTIME_ROOT,
   process.env.SENTENCEPIECE_ROOT,
-  process.env.SNDFILE_ROOT,
-  process.env.SAMPLERATE_ROOT,
   ...defaultPrefixes
 ]);
 
@@ -73,9 +71,7 @@ let libraries;
 if (platform === "win32") {
   const windowsLibs = [
     "onnxruntime.lib",
-    "sentencepiece.lib",
-    "sndfile.lib",
-    "samplerate.lib"
+    "sentencepiece.lib"
   ];
 
   libraries = windowsLibs.map((libName) => {
@@ -91,9 +87,7 @@ if (platform === "win32") {
   libraries = uniq([
     ...libDirs.map((dir) => `-L${toPosix(dir)}`),
     "-lonnxruntime",
-    "-lsentencepiece",
-    "-lsndfile",
-    "-lsamplerate"
+    "-lsentencepiece"
   ]);
 }
 

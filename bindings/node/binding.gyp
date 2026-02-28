@@ -54,6 +54,9 @@
         [
           "OS==\"win\"",
           {
+            "defines": [
+              "POCKET_TTS_STATIC"
+            ],
             "msvs_settings": {
               "VCCLCompilerTool": {
                 "AdditionalOptions": [

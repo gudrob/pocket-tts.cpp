@@ -182,7 +182,7 @@ The Node.js addon lives in [`bindings/node`](bindings/node) and is implemented w
 
 ```bash
 # macOS
-brew install onnxruntime sentencepiece libsndfile libsamplerate
+brew install onnxruntime sentencepiece
 
 cd bindings/node
 npm install
