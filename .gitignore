@@ -1,38 +1,19 @@
-# Build
+# CMake / build directories
 build/
+build-*/
+build-win*/
 cmake-build-*/
 out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Binaries / compiled artifacts
 *.exe
-
-# Models (download separately with download_models.sh)
-models/
-
-# Test outputs
-test/test_api
-test/PocketTTSTest/
-test/*.wav
-test_streaming
-streaming_output.wav
-
-# .NET build artifacts
-bin/
-obj/
 *.dll
 *.pdb
-*.deps.json
-*.runtimeconfig.json
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.vs/
-*.user
-*.suo
-
-# Compiled
 *.o
 *.obj
 *.a
@@ -40,11 +21,40 @@ obj/
 *.so
 *.dylib
 
-# macOS
+# Model and runtime outputs
+models/
+out.wav
+streaming_output.wav
+
+# Test outputs
+test/test_api
+test/PocketTTSTest/
+test/*.wav
+test_streaming
+
+# .NET build artifacts
+bin/
+obj/
+*.deps.json
+*.runtimeconfig.json
+
+# Local dependencies (not committed)
+vcpkg/
+vcpkg_installed/
+
+# IDE / editor files
+.vscode/
+.idea/
+.vs/
+*.user
+*.suo
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
 ._*
-
-# Windows
 Thumbs.db
 desktop.ini
 

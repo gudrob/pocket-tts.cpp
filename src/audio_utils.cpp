@@ -8,6 +8,9 @@
 #include <cstdint>
 
 namespace pocket_tts {
+namespace {
+constexpr double kPi = 3.14159265358979323846;
+}
 
 // ── WAV format structures ──────────────────────────────────────────────
 
@@ -221,8 +224,8 @@ std::vector<float> AudioUtils::resample(const std::vector<float>& input,
     const auto lanczosKernel = [](double x, int a) -> double {
         if (x == 0.0) return 1.0;
         if (x < -a || x > a) return 0.0;
-        const double pi_x = M_PI * x;
-        const double pi_x_over_a = M_PI * x / a;
+        const double pi_x = kPi * x;
+        const double pi_x_over_a = kPi * x / a;
         return (std::sin(pi_x) / pi_x) * (std::sin(pi_x_over_a) / pi_x_over_a);
     };
 

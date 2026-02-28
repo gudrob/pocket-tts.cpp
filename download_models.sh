@@ -50,10 +50,3 @@ echo "=== Download Complete ==="
 echo ""
 echo "Directory structure:"
 find "$OUTPUT_DIR" -type f | head -20
-
-echo ""
-echo "To build and run:"
-echo "  mkdir build && cd build"
-echo "  cmake .."
-echo "  make"
-echo "  ./pocket_tts 'Hello world!' models/reference_sample.wav output.wav"

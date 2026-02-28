@@ -11,6 +11,18 @@
 #include <numeric>
 
 namespace pocket_tts {
+namespace {
+#ifdef _WIN32
+std::unique_ptr<Ort::Session> createSession(Ort::Env& env, const std::string& modelPath, Ort::SessionOptions& options) {
+    std::wstring widePath(modelPath.begin(), modelPath.end());
+    return std::make_unique<Ort::Session>(env, widePath.c_str(), options);
+}
+#else
+std::unique_ptr<Ort::Session> createSession(Ort::Env& env, const std::string& modelPath, Ort::SessionOptions& options) {
+    return std::make_unique<Ort::Session>(env, modelPath.c_str(), options);
+}
+#endif
+}
 
 // Helper to create tensor from vector
 template<typename T>
@@ -87,12 +99,12 @@ struct PocketTTS::Impl {
         }
         
         if (config.loadVoiceEncoder) {
-            mimiEncoder = std::make_unique<Ort::Session>(env, mimiEncoderPath.c_str(), sessionOptions);
+            mimiEncoder = createSession(env, mimiEncoderPath, sessionOptions);
         }
-        textConditioner = std::make_unique<Ort::Session>(env, textConditionerPath.c_str(), sessionOptions);
-        flowLmMain = std::make_unique<Ort::Session>(env, flowLmMainPath.c_str(), sessionOptions);
-        flowLmFlow = std::make_unique<Ort::Session>(env, flowLmFlowPath.c_str(), sessionOptions);
-        mimiDecoder = std::make_unique<Ort::Session>(env, mimiDecoderPath.c_str(), sessionOptions);
+        textConditioner = createSession(env, textConditionerPath, sessionOptions);
+        flowLmMain = createSession(env, flowLmMainPath, sessionOptions);
+        flowLmFlow = createSession(env, flowLmFlowPath, sessionOptions);
+        mimiDecoder = createSession(env, mimiDecoderPath, sessionOptions);
         
         if (config.verbose) {
             std::cout << "Models loaded successfully." << std::endl;
