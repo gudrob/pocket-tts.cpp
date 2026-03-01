@@ -1,0 +1,181 @@
+name: node-addon-prebuilds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/node-addon-prebuilds.yml"
+      - "bindings/node/**"
+      - "src/**"
+      - "include/**"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  prebuild:
+    name: prebuild-${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-24.04
+          - os: windows
+            runner: windows-2022
+          - os: macos
+            runner: macos-14
+    defaults:
+      run:
+        working-directory: bindings/node
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: bindings/node/package.json
+
+      - name: Install native deps (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          brew install onnxruntime sentencepiece
+
+      - name: Install native deps (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config curl libsentencepiece-dev
+          sudo apt-get install -y libonnxruntime-dev || true
+          if [ ! -f /usr/lib/x86_64-linux-gnu/libonnxruntime.so ] && [ ! -f /usr/local/lib/libonnxruntime.so ]; then
+            ORT_VERSION=1.17.0
+            curl -L -o /tmp/onnxruntime.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+            tar -xzf /tmp/onnxruntime.tgz -C /tmp
+            sudo cp -r /tmp/onnxruntime-linux-x64-${ORT_VERSION}/include/* /usr/local/include/
+            sudo cp -r /tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/* /usr/local/lib/
+            sudo ldconfig
+          fi
+
+      - name: Restore vcpkg cache (Windows)
+        if: matrix.os == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg-cache\downloads
+            C:\vcpkg-cache\bincache
+          key: windows-vcpkg-x64-windows-release-v1
+
+      - name: Install native deps (Windows via vcpkg)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'C:\vcpkg')) {
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          }
+          $cacheRoot = 'C:\vcpkg-cache'
+          New-Item -ItemType Directory -Path "$cacheRoot\downloads" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$cacheRoot\bincache" -Force | Out-Null
+
+          $env:VCPKG_ROOT = 'C:\vcpkg'
+          $env:VCPKG_DOWNLOADS = "$cacheRoot\downloads"
+          $env:VCPKG_DEFAULT_BINARY_CACHE = "$cacheRoot\bincache"
+          $env:VCPKG_BINARY_SOURCES = "clear;files,$($env:VCPKG_DEFAULT_BINARY_CACHE),readwrite"
+          $triplet = 'x64-windows-release'
+          $tripletFile = 'C:\vcpkg\triplets\community\x64-windows-release.cmake'
+          @"
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_LIBRARY_LINKAGE dynamic)
+          set(VCPKG_BUILD_TYPE release)
+          "@ | Set-Content -Path $tripletFile -Encoding ascii
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg install onnxruntime:$triplet sentencepiece:$triplet --overlay-triplets=C:\vcpkg\triplets\community
+          "ONNXRUNTIME_ROOT=C:/vcpkg/installed/$triplet" >> $env:GITHUB_ENV
+          "SENTENCEPIECE_ROOT=C:/vcpkg/installed/$triplet" >> $env:GITHUB_ENV
+
+      - name: Debug native path resolution (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'C:\vcpkg\installed\x64-windows-release\include\sentencepiece_processor.h')) {
+            throw "sentencepiece_processor.h not found in vcpkg include dir"
+          }
+          if (!(Test-Path 'C:\vcpkg\installed\x64-windows-release\lib\sentencepiece.lib')) {
+            throw "sentencepiece.lib not found in vcpkg lib dir"
+          }
+          Get-ChildItem 'C:\vcpkg\installed\x64-windows-release\lib\*.lib' | Sort-Object Name | Select-Object -ExpandProperty Name
+          node -p "JSON.stringify(require('./scripts/gyp-paths'), null, 2)"
+
+      - name: Install npm deps
+        run: npm install --ignore-scripts
+
+      - name: Build prebuilds
+        run: npm run prebuild
+
+      - name: Bundle runtime DLLs into prebuild (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $tripletRoot = 'C:\vcpkg\installed\x64-windows-release'
+          $prebuildDir = 'prebuilds\win32-x64'
+          if (!(Test-Path $prebuildDir)) {
+            throw "Expected prebuild directory not found: $prebuildDir"
+          }
+          if (!(Test-Path "$tripletRoot\bin")) {
+            throw "Expected vcpkg bin directory not found: $tripletRoot\bin"
+          }
+          Copy-Item "$tripletRoot\bin\*.dll" $prebuildDir -Force
+          Write-Host 'Bundled runtime DLLs:'
+          Get-ChildItem "$prebuildDir\*.dll" | Sort-Object Name | Select-Object -ExpandProperty Name
+
+      - name: Diagnose MSVC runtime (Windows on failure)
+        if: failure() && matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          if (Test-Path 'build\pocket_tts.vcxproj') {
+            Write-Host 'RuntimeLibrary entries in build\pocket_tts.vcxproj:'
+            Select-String -Path 'build\pocket_tts.vcxproj' -Pattern 'RuntimeLibrary|AdditionalOptions' | ForEach-Object { $_.Line }
+          } else {
+            Write-Host 'No build\pocket_tts.vcxproj found'
+          }
+
+      - name: Verify addon loads (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $env:PATH = "$pwd\prebuilds\win32-x64;$env:PATH"
+          node -e "require('./index.js'); console.log('addon load ok')"
+
+      - name: Verify addon loads (Linux/macOS)
+        if: matrix.os != 'windows'
+        run: node -e "require('./index.js'); console.log('addon load ok')"
+
+      - name: Upload prebuild artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.os }}
+          path: bindings/node/prebuilds/**
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: prebuild
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all prebuilds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuild-*
+          merge-multiple: true
+          path: dist/prebuilds
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/prebuilds/**/*

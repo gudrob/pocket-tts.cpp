@@ -176,6 +176,22 @@ int total_samples = pocket_tts_generate_streaming(
 | **C#** | [test/PocketTTS.cs](test/PocketTTS.cs) | `dotnet run --project test/StreamingExample.csproj` |
 | **C** | [test/test_api.c](test/test_api.c) | `clang -o test test/test_api.c -I include -L build -lpocket_tts` |
 
+## Node.js Addon (Node 24+)
+
+The Node.js addon lives in [`bindings/node`](bindings/node) and is implemented with N-API.
+
+```bash
+# macOS
+brew install onnxruntime sentencepiece
+
+cd bindings/node
+npm install
+npm run build
+```
+
+There is also a GitHub Actions matrix workflow for Linux, Windows and macOS prebuilds:
+`.github/workflows/node-addon-prebuilds.yml`
+
 ## Build Options
 
 ```bash
