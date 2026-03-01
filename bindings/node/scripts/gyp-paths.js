@@ -48,12 +48,13 @@ const defaultPrefixes =
       ? ["/usr/local", "/usr"]
       : ["C:/vcpkg/installed/x64-windows-static", "C:/vcpkg/installed/x64-windows"];
 
-const prefixes = uniq([
+const explicitPrefixes = uniq([
   ...splitEnvPath("POCKET_TTS_PREFIX"),
   process.env.ONNXRUNTIME_ROOT,
-  process.env.SENTENCEPIECE_ROOT,
-  ...defaultPrefixes
+  process.env.SENTENCEPIECE_ROOT
 ]);
+
+const prefixes = explicitPrefixes.length > 0 ? explicitPrefixes : defaultPrefixes;
 
 const includeCandidates = uniq([
   path.resolve(__dirname, "../../../include"),
@@ -81,28 +82,45 @@ function findLibFile(fileName) {
 let libraries;
 if (platform === "win32") {
   const libDirs = existingDirs(uniq(prefixes.map((prefix) => path.join(prefix, "lib"))));
+  const primaryLibDir = libDirs[0];
 
-  const windowsLibs = [
-    "onnxruntime.lib",
-    "sentencepiece.lib",
-    "libprotobuf.lib",
-    "libprotobuf-lite.lib",
-    "re2.lib",
-    "utf8_range.lib",
-    "utf8_validity.lib",
-    "abseil_dll.lib"
-  ];
+  if (primaryLibDir) {
+    const libsFromPrimaryDir = listFiles(primaryLibDir, /\.lib$/i)
+      .filter((libPath) => !/sentencepiece_train\.lib$/i.test(libPath))
+      .map(toPosix);
 
-  const resolvedCore = windowsLibs
-    .map((libName) => findLibFile(libName))
-    .filter(Boolean)
-    .map(toPosix);
+    libraries = uniq([
+      ...libsFromPrimaryDir,
+      "ws2_32.lib",
+      "advapi32.lib",
+      "bcrypt.lib",
+      "userenv.lib",
+      "shlwapi.lib",
+      "ole32.lib"
+    ]);
+  } else {
+    const windowsLibs = [
+      "onnxruntime.lib",
+      "sentencepiece.lib",
+      "libprotobuf.lib",
+      "libprotobuf-lite.lib",
+      "re2.lib",
+      "utf8_range.lib",
+      "utf8_validity.lib",
+      "abseil_dll.lib"
+    ];
 
-  const abslLibs = libDirs
-    .flatMap((dir) => listFiles(dir, /^absl.*\.lib$/i))
-    .map(toPosix);
+    const resolvedCore = windowsLibs
+      .map((libName) => findLibFile(libName))
+      .filter(Boolean)
+      .map(toPosix);
 
-  libraries = uniq([...resolvedCore, ...abslLibs]);
+    const abslLibs = libDirs
+      .flatMap((dir) => listFiles(dir, /^absl.*\.lib$/i))
+      .map(toPosix);
+
+    libraries = uniq([...resolvedCore, ...abslLibs]);
+  }
 } else {
   const libDirs = existingDirs(uniq(prefixes.map((prefix) => path.join(prefix, "lib"))));
 

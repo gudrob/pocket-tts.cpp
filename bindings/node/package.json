@@ -16,7 +16,7 @@
   "scripts": {
     "build": "node-gyp rebuild",
     "rebuild": "node-gyp rebuild --verbose",
-    "prebuild": "prebuildify --napi --strip --tag-libc",
+    "prebuild": "prebuildify --napi --strip --tag-libc --target 24.14.0",
     "clean": "node-gyp clean",
     "install": "node-gyp-build || node-gyp rebuild"
   },

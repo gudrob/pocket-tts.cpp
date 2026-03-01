@@ -63,6 +63,7 @@
                   "/std:c++17"
                 ],
                 "ExceptionHandling": 1,
+                "RuntimeLibrary": 2,
                 "WarningLevel": 4
               }
             }
