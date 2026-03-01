@@ -116,6 +116,22 @@ jobs:
       - name: Build prebuilds
         run: npm run prebuild
 
+      - name: Bundle runtime DLLs into prebuild (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $tripletRoot = 'C:\vcpkg\installed\x64-windows-release'
+          $prebuildDir = 'prebuilds\win32-x64'
+          if (!(Test-Path $prebuildDir)) {
+            throw "Expected prebuild directory not found: $prebuildDir"
+          }
+          if (!(Test-Path "$tripletRoot\bin")) {
+            throw "Expected vcpkg bin directory not found: $tripletRoot\bin"
+          }
+          Copy-Item "$tripletRoot\bin\*.dll" $prebuildDir -Force
+          Write-Host 'Bundled runtime DLLs:'
+          Get-ChildItem "$prebuildDir\*.dll" | Sort-Object Name | Select-Object -ExpandProperty Name
+
       - name: Diagnose MSVC runtime (Windows on failure)
         if: failure() && matrix.os == 'windows'
         shell: pwsh
@@ -127,7 +143,15 @@ jobs:
             Write-Host 'No build\pocket_tts.vcxproj found'
           }
 
-      - name: Verify addon loads
+      - name: Verify addon loads (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $env:PATH = "$pwd\prebuilds\win32-x64;$env:PATH"
+          node -e "require('./index.js'); console.log('addon load ok')"
+
+      - name: Verify addon loads (Linux/macOS)
+        if: matrix.os != 'windows'
         run: node -e "require('./index.js'); console.log('addon load ok')"
 
       - name: Upload prebuild artifact
