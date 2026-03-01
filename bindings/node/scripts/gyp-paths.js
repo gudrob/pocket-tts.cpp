@@ -29,6 +29,17 @@ function existingDirs(values) {
   });
 }
 
+function listFiles(dir, pattern) {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && pattern.test(entry.name))
+      .map((entry) => path.join(dir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
 const platform = process.platform;
 const defaultPrefixes =
   platform === "darwin"
@@ -69,18 +80,29 @@ function findLibFile(fileName) {
 
 let libraries;
 if (platform === "win32") {
+  const libDirs = existingDirs(uniq(prefixes.map((prefix) => path.join(prefix, "lib"))));
+
   const windowsLibs = [
     "onnxruntime.lib",
-    "sentencepiece.lib"
+    "sentencepiece.lib",
+    "libprotobuf.lib",
+    "libprotobuf-lite.lib",
+    "re2.lib",
+    "utf8_range.lib",
+    "utf8_validity.lib",
+    "abseil_dll.lib"
   ];
 
-  libraries = windowsLibs.map((libName) => {
-    const discovered = findLibFile(libName);
-    if (discovered) {
-      return toPosix(discovered);
-    }
-    return toPosix(path.join(prefixes[0], "lib", libName));
-  });
+  const resolvedCore = windowsLibs
+    .map((libName) => findLibFile(libName))
+    .filter(Boolean)
+    .map(toPosix);
+
+  const abslLibs = libDirs
+    .flatMap((dir) => listFiles(dir, /^absl.*\.lib$/i))
+    .map(toPosix);
+
+  libraries = uniq([...resolvedCore, ...abslLibs]);
 } else {
   const libDirs = existingDirs(uniq(prefixes.map((prefix) => path.join(prefix, "lib"))));
 
