@@ -116,6 +116,17 @@ jobs:
       - name: Build prebuilds
         run: npm run prebuild
 
+      - name: Diagnose MSVC runtime (Windows on failure)
+        if: failure() && matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          if (Test-Path 'build\pocket_tts.vcxproj') {
+            Write-Host 'RuntimeLibrary entries in build\pocket_tts.vcxproj:'
+            Select-String -Path 'build\pocket_tts.vcxproj' -Pattern 'RuntimeLibrary|AdditionalOptions' | ForEach-Object { $_.Line }
+          } else {
+            Write-Host 'No build\pocket_tts.vcxproj found'
+          }
+
       - name: Verify addon loads
         run: node -e "require('./index.js'); console.log('addon load ok')"
 

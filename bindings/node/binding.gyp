@@ -57,13 +57,30 @@
             "defines": [
               "POCKET_TTS_STATIC"
             ],
+            "configurations": {
+              "Release": {
+                "msvs_settings": {
+                  "VCCLCompilerTool": {
+                    "RuntimeLibrary": "2"
+                  }
+                }
+              },
+              "Debug": {
+                "msvs_settings": {
+                  "VCCLCompilerTool": {
+                    "RuntimeLibrary": "3"
+                  }
+                }
+              }
+            },
             "msvs_settings": {
               "VCCLCompilerTool": {
                 "AdditionalOptions": [
-                  "/std:c++17"
+                  "/std:c++17",
+                  "/MD"
                 ],
                 "ExceptionHandling": 1,
-                "RuntimeLibrary": 2,
+                "RuntimeLibrary": "2",
                 "WarningLevel": 4
               }
             }
